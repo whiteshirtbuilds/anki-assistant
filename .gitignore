@@ -1,0 +1,19 @@
+# Lokale Swift- und App-Builds
+.build
+.venv_tts
+Anki-Lernassistent.app/
+config.local.json
+.env
+.env.local
+
+# Laufzeitdaten und Testartefakte
+*.log
+*.pid
+qwen25-test-output.md
+qwen25-test-error.log
+run-qwen25-test.sh
+VoiceBridge/__pycache__/
+__pycache__/
+
+# macOS
+.DS_Store
