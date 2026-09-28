@@ -236,11 +236,18 @@ final class GeminiLiveService {
     private var inputAudioBytesSinceUsage = 0
     private var outputAudioBytesSinceUsage = 0
     private var initialGreetingSent = false
+    private var workspace: AssistantWorkspace = .anki
 
     var isActive: Bool { socket != nil }
 
-    func start(apiKey: String, instruction: String, images: [GeminiImage] = []) {
+    func start(
+        apiKey: String,
+        instruction: String,
+        images: [GeminiImage] = [],
+        workspace: AssistantWorkspace = .anki
+    ) {
         stop()
+        self.workspace = workspace
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else {
             onStatus?(GeminiLiveError.missingKey.localizedDescription)
@@ -272,7 +279,7 @@ final class GeminiLiveService {
         onReadyChange?(false)
         onStatus?("Verbinde mit Gemini Live …")
 
-        let setup: [String: Any] = [
+        var setup: [String: Any] = [
             "setup": [
                 "model": "models/gemini-3.1-flash-live-preview",
                 "generationConfig": [
@@ -386,6 +393,11 @@ final class GeminiLiveService {
                 "outputAudioTranscription": [:]
             ]
         ]
+        if workspace == .document,
+           var configuration = setup["setup"] as? [String: Any] {
+            configuration.removeValue(forKey: "tools")
+            setup["setup"] = configuration
+        }
         sendJSON(setup)
         beginReceiveLoop(task)
     }
@@ -558,13 +570,14 @@ final class GeminiLiveService {
         initialGreetingSent = true
         suppressMicrophone = true
         onStatus?("Gemini ist bereit und begrüßt dich …")
-        sendJSON([
-            "realtimeInput": [
-                "text": """
-                Die Live-Verbindung ist jetzt vollständig bereit. Rufe zuerst read_current_anki_card auf. Begrüße mich danach kurz und sage in höchstens zwei Sätzen konkret, worum es auf der aktuell geöffneten Karte geht, ohne die vollständige Lösung vorwegzunehmen. Wenn ich „Starte neues Thema“ oder „Gib mir einen Themenüberblick“ sage, rufe get_deck_overview auf und gib einen Überblick über das Thema dieses Stapels mit höchstens fünf kurzen Punkten. Beende mit: Du kannst loslegen.
-                """
-            ]
-        ])
+        let greeting = workspace == .document
+            ? """
+              Die Live-Verbindung ist bereit. Begrüße mich kurz und nenne in einem Satz das Thema der geladenen Obsidian-Notiz. Warte danach auf meine Frage zur Bachelorarbeit. Behandle die Notiz als Dokument, nicht als Lernkarte.
+              """
+            : """
+              Die Live-Verbindung ist jetzt vollständig bereit. Rufe zuerst read_current_anki_card auf. Begrüße mich danach kurz und sage in höchstens zwei Sätzen konkret, worum es auf der aktuell geöffneten Karte geht, ohne die vollständige Lösung vorwegzunehmen. Wenn ich „Starte neues Thema“ oder „Gib mir einen Themenüberblick“ sage, rufe get_deck_overview auf und gib einen Überblick über das Thema dieses Stapels mit höchstens fünf kurzen Punkten. Beende mit: Du kannst loslegen.
+              """
+        sendJSON(["realtimeInput": ["text": greeting]])
     }
 
     private func startInput() throws {
@@ -671,6 +684,7 @@ final class GeminiLiveService {
     }
 
     private func handleToolCall(_ toolCall: [String: Any]) {
+        guard workspace == .anki else { return }
         guard let calls = toolCall["functionCalls"] as? [[String: Any]], !calls.isEmpty else { return }
         Task { [weak self] in
             guard let self else { return }

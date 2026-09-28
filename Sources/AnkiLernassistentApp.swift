@@ -614,12 +614,11 @@ final class LearningSession: ObservableObject {
             tutorReply = ""
             isGeminiLiveStarting = true
             geminiStatus = "Bereite die Obsidian-Notiz für Gemini Live vor …"
-            let instruction = """
-            Du bist ein natürlicher, deutschsprachiger Gesprächspartner für eine Bachelorarbeit. Diskutiere nur den unten übergebenen Markdown-Kontext. Hilf beim Prüfen von Argumenten, Struktur, Verständlichkeit und wissenschaftlicher Formulierung. Erfinde niemals Quellen, Zitate, Daten oder Forschungsergebnisse. Wenn Quellen fehlen, sage klar, welche Art von Beleg benötigt wird. Mache Textänderungen ausschließlich als klar markierte Vorschläge und ändere nie selbstständig Dateien oder Anki-Karten. Antworte kurz, flüssig und ohne LaTeX, Dollarzeichen oder Markdown-Formeln.
-
-            \(document.tutorContext)
-            """
-            gemini.start(apiKey: key, instruction: instruction)
+            gemini.start(
+                apiKey: key,
+                instruction: DocumentTutorPrompt.liveInstruction(for: document),
+                workspace: .document
+            )
             return
         }
         guard let card else {
@@ -727,7 +726,8 @@ final class LearningSession: ObservableObject {
             try textAPILive.start(
                 textModel: textTutorMode,
                 geminiAPIKey: geminiAPIKey,
-                systemPrompt: textAPILiveInstruction
+                systemPrompt: textAPILiveInstruction,
+                workspace: workspace
             )
         } catch {
             textAPILiveStatus = error.localizedDescription
@@ -743,11 +743,7 @@ final class LearningSession: ObservableObject {
         guard workspace == .document, let document else {
             return TextAPILiveService.ankiSystemPrompt
         }
-        return """
-        Du bist ein natürlicher deutschsprachiger Gesprächspartner für eine Bachelorarbeit. Diskutiere nur die aktuell geöffnete Markdown-Notiz. Hilf bei Argumentation, Gliederung, Verständlichkeit und wissenschaftlicher Formulierung. Erfinde nie Quellen, Zitate, Daten oder Forschungsergebnisse. Mache Textänderungen nur als klar markierte Vorschläge und ändere nie Dateien oder Anki-Karten selbstständig. Antworte kurz, flüssig und ohne LaTeX, Dollarzeichen oder Markdown-Formeln.
-
-        \(document.tutorContext)
-        """
+        return DocumentTutorPrompt.liveInstruction(for: document)
     }
 
     func showTextAPILatencyLog() {
@@ -1039,9 +1035,7 @@ final class LearningSession: ObservableObject {
                 return
             }
             let prompt = """
-            Du diskutierst mit mir einen Abschnitt meiner Bachelorarbeit. Antworte auf Deutsch, fachlich präzise und konstruktiv. Nenne Unsicherheiten klar, erfinde niemals Quellen, Daten oder Zitate. Mache Änderungen nur als konkrete Vorschläge; schreibe nichts in die Datei zurück.
-
-            \(document.tutorContext)
+            \(DocumentTutorPrompt.liveInstruction(for: document))
 
             Meine Frage oder Anmerkung:
             \(spokenAnswer)
@@ -1090,6 +1084,7 @@ final class LearningSession: ObservableObject {
         tutorReply = ""
         isTutorResponding = true
         let selectedTutor = textTutorMode
+        let selectedWorkspace = workspace
         if selectedTutor.isCloud {
             loadGeminiKeyIfNeeded(slot: .paid)
         }
@@ -1116,7 +1111,8 @@ final class LearningSession: ObservableObject {
                     let result = try await GeminiTextTutor.ask(
                         fullPrompt,
                         apiKey: geminiAPIKey,
-                        mode: selectedTutor
+                        mode: selectedTutor,
+                        workspace: selectedWorkspace
                     )
                     if let usage = result.usage {
                         await GeminiUsageLedger.shared.recordTextTutor(

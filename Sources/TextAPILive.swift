@@ -74,7 +74,8 @@ final class TextAPILiveService {
     func start(
         textModel: TextTutorMode,
         geminiAPIKey: String,
-        systemPrompt: String? = nil
+        systemPrompt: String? = nil,
+        workspace: AssistantWorkspace = .anki
     ) throws {
         if isActive { return }
         guard FileManager.default.fileExists(atPath: AppConfiguration.localAIRoot.path) else {
@@ -131,7 +132,8 @@ final class TextAPILiveService {
         process.currentDirectoryURL = URL(fileURLWithPath: Self.bridgeFolder)
         process.arguments = arguments(
             for: textModel,
-            systemPrompt: systemPrompt ?? Self.ankiSystemPrompt
+            systemPrompt: systemPrompt ?? Self.ankiSystemPrompt,
+            workspace: workspace
         )
         var environment = ProcessInfo.processInfo.environment
         environment["HF_HOME"] = Self.cacheRoot + "/huggingface"
@@ -179,7 +181,9 @@ final class TextAPILiveService {
         onStateChange?(true)
         onReadyChange?(false)
         onStatus?(
-            "Live über Text-API startet. Beim ersten Mal wird das deutsche Sprachmodell auf die externe Festplatte geladen; danach sage einfach „Start“ oder frage nach der aktuellen Karte."
+            workspace == .document
+                ? "Live über Text-API startet. Sobald die Verbindung bereit ist, kannst du über die geladene Obsidian-Notiz sprechen."
+                : "Live über Text-API startet. Beim ersten Mal wird das deutsche Sprachmodell auf die externe Festplatte geladen; danach sage einfach „Start“ oder frage nach der aktuellen Karte."
         )
         readinessTask = Task { [weak self, weak process] in
             guard let self else { return }
@@ -420,7 +424,11 @@ final class TextAPILiveService {
         return formatter.string(from: Date())
     }
 
-    private func arguments(for textModel: TextTutorMode, systemPrompt: String) -> [String] {
+    private func arguments(
+        for textModel: TextTutorMode,
+        systemPrompt: String,
+        workspace: AssistantWorkspace
+    ) -> [String] {
         let providerArguments: [String]
         switch textModel {
         case .localQwen:
@@ -438,7 +446,7 @@ final class TextAPILiveService {
             ]
         }
 
-        return [
+        let commonArguments = [
             "local",
             "--port", "8766",
             "--stt", "parakeet-tdt",
@@ -457,9 +465,11 @@ final class TextAPILiveService {
             "--qwen3_tts_language", "de",
             "--qwen3_tts_streaming_chunk_size", "2",
             "--local_audio_playback_buffer_ms", "80",
-            "--tool-module", "anki_tools",
             "--init_chat_prompt", systemPrompt,
         ]
+        return workspace == .anki
+            ? commonArguments + ["--tool-module", "anki_tools"]
+            : commonArguments
     }
 
     static let ankiSystemPrompt = """
